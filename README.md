@@ -9,7 +9,7 @@
 - H×W: 時間帯×曜日ごとの優勢方向確率・EV
 
 ※ EVは `終値 - 始値` の平均値です。  
-※ データは Yahoo Finance (`yfinance`) の1時間足を使用します。
+※ データは Yahoo Finance を使用し、`yfinance` 失敗時は `yahooquery` にフォールバックします。
 
 ## 対象銘柄
 - ベース: `USDJPY EURUSD GBPUSD AUDUSD GBPAUD GBPNZD XAUUSD US30 WTIUSD`

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 import requests
 import yfinance as yf
+from yahooquery import Ticker
 
 JST = "Asia/Tokyo"
 
@@ -122,10 +123,52 @@ class StatsBot:
                         exc,
                     )
                     if is_last:
-                        logging.error("download failed after retries for chunk=%s", ",".join(chunk))
+                        logging.error("yfinance failed after retries for chunk=%s", ",".join(chunk))
+                        self._fetch_chunk_by_yahooquery(chunk, frames)
                     else:
                         time.sleep(self.retry_wait_sec * attempt)
         return frames
+
+    def _fetch_chunk_by_yahooquery(self, chunk: List[str], frames: Dict[str, pd.DataFrame]) -> None:
+        logging.info("fallback provider: yahooquery chunk=%s", ",".join(chunk))
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                tq = Ticker(chunk, asynchronous=False, validate=True)
+                hist = tq.history(period=f"{self.lookback_days}d", interval="1h")
+                if hist is None or len(hist) == 0:
+                    raise RuntimeError("empty response from yahooquery")
+
+                if isinstance(hist.index, pd.MultiIndex):
+                    work = hist.reset_index()
+                else:
+                    work = hist.copy()
+                    work["symbol"] = chunk[0]
+                    work["date"] = work.index
+
+                for ticker in chunk:
+                    one = work[work["symbol"] == ticker]
+                    if one.empty:
+                        continue
+                    one = one[["date", "open", "close"]].dropna().copy()
+                    if one.empty:
+                        continue
+                    one.columns = ["Date", "Open", "Close"]
+                    one = one.set_index("Date")
+                    frames[ticker] = self._normalize_index(one)
+                return
+            except Exception as exc:
+                is_last = attempt == self.max_retries
+                logging.warning(
+                    "yahooquery retry %d/%d failed for chunk=%s err=%s",
+                    attempt,
+                    self.max_retries,
+                    ",".join(chunk),
+                    exc,
+                )
+                if is_last:
+                    logging.error("all providers failed for chunk=%s", ",".join(chunk))
+                else:
+                    time.sleep(self.retry_wait_sec * attempt)
 
     def _best_signal(self, grouped: pd.DataFrame, label_builder) -> Optional[Signal]:
         if grouped.empty:
