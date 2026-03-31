@@ -1,8 +1,9 @@
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import pandas as pd
 import requests
@@ -61,34 +62,70 @@ class StatsBot:
         self.webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
         self.lookback_days = int(os.getenv("LOOKBACK_DAYS", "180"))
         self.min_samples = int(os.getenv("MIN_SAMPLES", "20"))
+        self.max_retries = int(os.getenv("YF_MAX_RETRIES", "4"))
+        self.retry_wait_sec = int(os.getenv("YF_RETRY_WAIT_SEC", "8"))
+        self.batch_size = int(os.getenv("YF_BATCH_SIZE", "6"))
         include_recommended = os.getenv("INCLUDE_RECOMMENDED", "true").lower() == "true"
         self.symbols = dict(BASE_SYMBOLS)
         if include_recommended:
             self.symbols.update(RECOMMENDED_SYMBOLS)
 
-    def fetch(self, ticker: str) -> pd.DataFrame:
-        df = yf.download(
-            tickers=ticker,
-            interval="1h",
-            period=f"{self.lookback_days}d",
-            auto_adjust=False,
-            progress=False,
-            threads=False,
-        )
-        if df.empty:
-            return df
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = [c[0] for c in df.columns]
-
-        df = df[["Open", "Close"]].dropna().copy()
-        if df.empty:
-            return df
+    @staticmethod
+    def _normalize_index(df: pd.DataFrame) -> pd.DataFrame:
         idx = df.index
         if idx.tz is None:
             df.index = idx.tz_localize("UTC").tz_convert(JST)
         else:
             df.index = idx.tz_convert(JST)
         return df
+
+    def fetch_all(self) -> Dict[str, pd.DataFrame]:
+        tickers = list(self.symbols.values())
+        frames: Dict[str, pd.DataFrame] = {t: pd.DataFrame() for t in tickers}
+        chunks = [tickers[i:i + self.batch_size] for i in range(0, len(tickers), self.batch_size)]
+
+        for chunk in chunks:
+            for attempt in range(1, self.max_retries + 1):
+                try:
+                    df = yf.download(
+                        tickers=" ".join(chunk),
+                        interval="1h",
+                        period=f"{self.lookback_days}d",
+                        auto_adjust=False,
+                        progress=False,
+                        threads=False,
+                    )
+                    if df.empty:
+                        raise RuntimeError("empty response")
+
+                    if isinstance(df.columns, pd.MultiIndex):
+                        for ticker in chunk:
+                            if ticker not in df.columns.get_level_values(1):
+                                logging.warning("ticker missing in response: %s", ticker)
+                                continue
+                            one = df.xs(ticker, axis=1, level=1)[["Open", "Close"]].dropna().copy()
+                            if not one.empty:
+                                frames[ticker] = self._normalize_index(one)
+                    else:
+                        ticker = chunk[0]
+                        one = df[["Open", "Close"]].dropna().copy()
+                        if not one.empty:
+                            frames[ticker] = self._normalize_index(one)
+                    break
+                except Exception as exc:
+                    is_last = attempt == self.max_retries
+                    logging.warning(
+                        "download retry %d/%d failed for chunk=%s err=%s",
+                        attempt,
+                        self.max_retries,
+                        ",".join(chunk),
+                        exc,
+                    )
+                    if is_last:
+                        logging.error("download failed after retries for chunk=%s", ",".join(chunk))
+                    else:
+                        time.sleep(self.retry_wait_sec * attempt)
+        return frames
 
     def _best_signal(self, grouped: pd.DataFrame, label_builder) -> Optional[Signal]:
         if grouped.empty:
@@ -110,8 +147,8 @@ class StatsBot:
             samples=int(chosen["count"]),
         )
 
-    def analyze_symbol(self, symbol: str, ticker: str) -> SymbolSignals:
-        df = self.fetch(ticker)
+    def analyze_symbol(self, symbol: str, ticker: str, frame_map: Dict[str, pd.DataFrame]) -> SymbolSignals:
+        df = frame_map.get(ticker, pd.DataFrame())
         if df.empty:
             return SymbolSignals(symbol=symbol, hour=None, weekday=None, hour_weekday=None, note="データ取得不可")
 
@@ -173,7 +210,8 @@ class StatsBot:
 
     def run(self) -> None:
         logging.info("start analysis symbols=%d lookback_days=%d min_samples=%d", len(self.symbols), self.lookback_days, self.min_samples)
-        results = [self.analyze_symbol(symbol, ticker) for symbol, ticker in self.symbols.items()]
+        frame_map = self.fetch_all()
+        results = [self.analyze_symbol(symbol, ticker, frame_map) for symbol, ticker in self.symbols.items()]
         message = self.render_message(results)
 
         dry_run = os.getenv("DRY_RUN", "false").lower() == "true"

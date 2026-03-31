@@ -25,6 +25,11 @@ pip install -r requirements.txt
 DRY_RUN=true python main.py
 ```
 
+PowerShell の場合:
+```powershell
+$env:DRY_RUN=\"true\"; python main.py
+```
+
 ## GitHub Actions運用
 `.github/workflows/discord_market_stats.yml` を使用します。
 
@@ -42,3 +47,6 @@ DRY_RUN=true python main.py
 - `INCLUDE_RECOMMENDED` (既定: `true`)
 - `DRY_RUN` (既定: `false`)
 - `LOG_LEVEL` (既定: `INFO`)
+- `YF_MAX_RETRIES` (既定: `4`)
+- `YF_RETRY_WAIT_SEC` (既定: `8`)
+- `YF_BATCH_SIZE` (既定: `6`)
