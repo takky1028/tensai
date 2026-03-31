@@ -51,9 +51,12 @@ class Signal:
 @dataclass
 class SymbolSignals:
     symbol: str
-    hour: Optional[Signal]
-    weekday: Optional[Signal]
-    hour_weekday: Optional[Signal]
+    hour_up: Optional[Signal]
+    hour_down: Optional[Signal]
+    weekday_up: Optional[Signal]
+    weekday_down: Optional[Signal]
+    hour_weekday_up: Optional[Signal]
+    hour_weekday_down: Optional[Signal]
     note: Optional[str] = None
 
 
@@ -137,7 +140,7 @@ class StatsBot:
             frames[market_symbol] = self.fetch_symbol(market_symbol)
         return frames
 
-    def _best_signal(self, grouped: pd.DataFrame, label_builder) -> Optional[Signal]:
+    def _best_signal(self, grouped: pd.DataFrame, label_builder, direction: str) -> Optional[Signal]:
         if grouped.empty:
             return None
         valid = grouped[grouped["count"] >= self.min_samples].copy()
@@ -146,8 +149,14 @@ class StatsBot:
 
         valid["up_prob"] = valid["up_count"] / valid["count"]
         valid["down_prob"] = 1 - valid["up_prob"]
-        valid["direction"] = valid.apply(lambda r: "↑" if r["up_prob"] >= r["down_prob"] else "↓", axis=1)
-        valid["prob"] = valid[["up_prob", "down_prob"]].max(axis=1)
+        if direction == "up":
+            valid["direction"] = "↑"
+            valid["prob"] = valid["up_prob"]
+        elif direction == "down":
+            valid["direction"] = "↓"
+            valid["prob"] = valid["down_prob"]
+        else:
+            raise ValueError(f"unknown direction: {direction}")
         chosen = valid.sort_values(["prob", "count"], ascending=[False, False]).iloc[0]
         return Signal(
             label=label_builder(chosen.name),
@@ -160,7 +169,16 @@ class StatsBot:
     def analyze_symbol(self, symbol: str, market_symbol: str, frame_map: Dict[str, pd.DataFrame]) -> SymbolSignals:
         df = frame_map.get(market_symbol, pd.DataFrame())
         if df.empty:
-            return SymbolSignals(symbol=symbol, hour=None, weekday=None, hour_weekday=None, note="データ取得不可")
+            return SymbolSignals(
+                symbol=symbol,
+                hour_up=None,
+                hour_down=None,
+                weekday_up=None,
+                weekday_down=None,
+                hour_weekday_up=None,
+                hour_weekday_down=None,
+                note="データ取得不可",
+            )
 
         df["ret"] = df["Close"] - df["Open"]
         df["is_up"] = (df["ret"] > 0).astype(int)
@@ -178,14 +196,38 @@ class StatsBot:
         hw_stats = df.groupby(["weekday", "hour"]).agg(agg_spec)
         hw_stats.columns = ["mean_ret", "count", "up_count"]
 
-        hour_signal = self._best_signal(hour_stats, lambda h: f"{int(h):02d}時")
-        weekday_signal = self._best_signal(weekday_stats, lambda w: f"{WEEKDAY_LABELS_JA.get(int(w), str(w))}曜")
-        hw_signal = self._best_signal(
+        hour_up_signal = self._best_signal(hour_stats, lambda h: f"{int(h):02d}時", direction="up")
+        hour_down_signal = self._best_signal(hour_stats, lambda h: f"{int(h):02d}時", direction="down")
+        weekday_up_signal = self._best_signal(
+            weekday_stats,
+            lambda w: f"{WEEKDAY_LABELS_JA.get(int(w), str(w))}曜",
+            direction="up",
+        )
+        weekday_down_signal = self._best_signal(
+            weekday_stats,
+            lambda w: f"{WEEKDAY_LABELS_JA.get(int(w), str(w))}曜",
+            direction="down",
+        )
+        hw_up_signal = self._best_signal(
             hw_stats,
             lambda key: f"{WEEKDAY_LABELS_JA.get(int(key[0]), str(key[0]))}曜 {int(key[1]):02d}時",
+            direction="up",
+        )
+        hw_down_signal = self._best_signal(
+            hw_stats,
+            lambda key: f"{WEEKDAY_LABELS_JA.get(int(key[0]), str(key[0]))}曜 {int(key[1]):02d}時",
+            direction="down",
         )
 
-        return SymbolSignals(symbol=symbol, hour=hour_signal, weekday=weekday_signal, hour_weekday=hw_signal)
+        return SymbolSignals(
+            symbol=symbol,
+            hour_up=hour_up_signal,
+            hour_down=hour_down_signal,
+            weekday_up=weekday_up_signal,
+            weekday_down=weekday_down_signal,
+            hour_weekday_up=hw_up_signal,
+            hour_weekday_down=hw_down_signal,
+        )
 
     @staticmethod
     def _fmt_signal(title: str, signal: Optional[Signal]) -> str:
@@ -201,14 +243,17 @@ class StatsBot:
         lines = [f"📊 Market Stats ({now})", "```"]
         for s in signals:
             lines.append(f"{s.symbol}")
-            lines.append(self._fmt_signal("H", s.hour))
-            lines.append(self._fmt_signal("W", s.weekday))
-            lines.append(self._fmt_signal("H×W", s.hour_weekday))
+            lines.append(self._fmt_signal("H↑", s.hour_up))
+            lines.append(self._fmt_signal("H↓", s.hour_down))
+            lines.append(self._fmt_signal("W↑", s.weekday_up))
+            lines.append(self._fmt_signal("W↓", s.weekday_down))
+            lines.append(self._fmt_signal("H×W↑", s.hour_weekday_up))
+            lines.append(self._fmt_signal("H×W↓", s.hour_weekday_down))
             if s.note:
                 lines.append(f"note: {s.note}")
             lines.append("")
         lines.append("```")
-        lines.append("Legend: H=時間帯 / W=曜日 / EV=平均(終値-始値)")
+        lines.append("Legend: H=時間帯 / W=曜日 / ↑=陽線率 / ↓=陰線率 / EV=平均(終値-始値)")
         return "\n".join(lines)
 
     def post_discord(self, content: str) -> None:
