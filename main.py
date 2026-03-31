@@ -7,34 +7,33 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 import requests
-import yfinance as yf
-from yahooquery import Ticker
 
 JST = "Asia/Tokyo"
+TWELVE_DATA_URL = "https://api.twelvedata.com/time_series"
 
 BASE_SYMBOLS: Dict[str, str] = {
-    "USDJPY": "USDJPY=X",
-    "EURUSD": "EURUSD=X",
-    "GBPUSD": "GBPUSD=X",
-    "AUDUSD": "AUDUSD=X",
-    "GBPAUD": "GBPAUD=X",
-    "GBPNZD": "GBPNZD=X",
-    "XAUUSD": "XAUUSD=X",
-    "US30": "^DJI",
-    "WTIUSD": "CL=F",
+    "USDJPY": "USD/JPY",
+    "EURUSD": "EUR/USD",
+    "GBPUSD": "GBP/USD",
+    "AUDUSD": "AUD/USD",
+    "GBPAUD": "GBP/AUD",
+    "GBPNZD": "GBP/NZD",
+    "XAUUSD": "XAU/USD",
+    "US30": "DJI",
+    "WTIUSD": "WTI",
 }
 
 RECOMMENDED_SYMBOLS: Dict[str, str] = {
-    "EURJPY": "EURJPY=X",
-    "GBPJPY": "GBPJPY=X",
-    "AUDJPY": "AUDJPY=X",
-    "NZDJPY": "NZDJPY=X",
-    "EURGBP": "EURGBP=X",
-    "EURNZD": "EURNZD=X",
-    "AUDNZD": "AUDNZD=X",
-    "XAGUSD": "XAGUSD=X",
-    "NAS100": "^NDX",
-    "SPX500": "^GSPC",
+    "EURJPY": "EUR/JPY",
+    "GBPJPY": "GBP/JPY",
+    "AUDJPY": "AUD/JPY",
+    "NZDJPY": "NZD/JPY",
+    "EURGBP": "EUR/GBP",
+    "EURNZD": "EUR/NZD",
+    "AUDNZD": "AUD/NZD",
+    "XAGUSD": "XAG/USD",
+    "NAS100": "NDX",
+    "SPX500": "SPX",
 }
 
 WEEKDAY_LABELS_JA = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
@@ -61,15 +60,19 @@ class SymbolSignals:
 class StatsBot:
     def __init__(self) -> None:
         self.webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+        self.twelve_data_api_key = os.getenv("TWELVEDATA_API_KEY", "").strip()
         self.lookback_days = int(os.getenv("LOOKBACK_DAYS", "180"))
         self.min_samples = int(os.getenv("MIN_SAMPLES", "20"))
-        self.max_retries = int(os.getenv("YF_MAX_RETRIES", "4"))
-        self.retry_wait_sec = int(os.getenv("YF_RETRY_WAIT_SEC", "8"))
-        self.batch_size = int(os.getenv("YF_BATCH_SIZE", "6"))
+        self.max_retries = int(os.getenv("API_MAX_RETRIES", "4"))
+        self.retry_wait_sec = int(os.getenv("API_RETRY_WAIT_SEC", "8"))
+        self.request_timeout = int(os.getenv("API_TIMEOUT_SEC", "20"))
         include_recommended = os.getenv("INCLUDE_RECOMMENDED", "true").lower() == "true"
+
         self.symbols = dict(BASE_SYMBOLS)
         if include_recommended:
             self.symbols.update(RECOMMENDED_SYMBOLS)
+
+        self.session = requests.Session()
 
     @staticmethod
     def _normalize_index(df: pd.DataFrame) -> pd.DataFrame:
@@ -80,95 +83,59 @@ class StatsBot:
             df.index = idx.tz_convert(JST)
         return df
 
-    def fetch_all(self) -> Dict[str, pd.DataFrame]:
-        tickers = list(self.symbols.values())
-        frames: Dict[str, pd.DataFrame] = {t: pd.DataFrame() for t in tickers}
-        chunks = [tickers[i:i + self.batch_size] for i in range(0, len(tickers), self.batch_size)]
+    def fetch_symbol(self, market_symbol: str) -> pd.DataFrame:
+        if not self.twelve_data_api_key:
+            raise RuntimeError("TWELVEDATA_API_KEY is not set")
 
-        for chunk in chunks:
-            for attempt in range(1, self.max_retries + 1):
-                try:
-                    df = yf.download(
-                        tickers=" ".join(chunk),
-                        interval="1h",
-                        period=f"{self.lookback_days}d",
-                        auto_adjust=False,
-                        progress=False,
-                        threads=False,
-                    )
-                    if df.empty:
-                        raise RuntimeError("empty response")
-
-                    if isinstance(df.columns, pd.MultiIndex):
-                        for ticker in chunk:
-                            if ticker not in df.columns.get_level_values(1):
-                                logging.warning("ticker missing in response: %s", ticker)
-                                continue
-                            one = df.xs(ticker, axis=1, level=1)[["Open", "Close"]].dropna().copy()
-                            if not one.empty:
-                                frames[ticker] = self._normalize_index(one)
-                    else:
-                        ticker = chunk[0]
-                        one = df[["Open", "Close"]].dropna().copy()
-                        if not one.empty:
-                            frames[ticker] = self._normalize_index(one)
-                    break
-                except Exception as exc:
-                    is_last = attempt == self.max_retries
-                    logging.warning(
-                        "download retry %d/%d failed for chunk=%s err=%s",
-                        attempt,
-                        self.max_retries,
-                        ",".join(chunk),
-                        exc,
-                    )
-                    if is_last:
-                        logging.error("yfinance failed after retries for chunk=%s", ",".join(chunk))
-                        self._fetch_chunk_by_yahooquery(chunk, frames)
-                    else:
-                        time.sleep(self.retry_wait_sec * attempt)
-        return frames
-
-    def _fetch_chunk_by_yahooquery(self, chunk: List[str], frames: Dict[str, pd.DataFrame]) -> None:
-        logging.info("fallback provider: yahooquery chunk=%s", ",".join(chunk))
         for attempt in range(1, self.max_retries + 1):
             try:
-                tq = Ticker(chunk, asynchronous=False, validate=True)
-                hist = tq.history(period=f"{self.lookback_days}d", interval="1h")
-                if hist is None or len(hist) == 0:
-                    raise RuntimeError("empty response from yahooquery")
+                response = self.session.get(
+                    TWELVE_DATA_URL,
+                    params={
+                        "symbol": market_symbol,
+                        "interval": "1h",
+                        "outputsize": str(min(self.lookback_days * 24, 5000)),
+                        "timezone": "UTC",
+                        "apikey": self.twelve_data_api_key,
+                    },
+                    timeout=self.request_timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if "values" not in payload or not payload["values"]:
+                    raise RuntimeError(f"empty values: {payload.get('message', payload.get('status', 'unknown'))}")
 
-                if isinstance(hist.index, pd.MultiIndex):
-                    work = hist.reset_index()
-                else:
-                    work = hist.copy()
-                    work["symbol"] = chunk[0]
-                    work["date"] = work.index
+                df = pd.DataFrame(payload["values"])
+                df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+                df["open"] = pd.to_numeric(df["open"], errors="coerce")
+                df["close"] = pd.to_numeric(df["close"], errors="coerce")
+                df = df.dropna(subset=["open", "close"]).copy()
+                if df.empty:
+                    raise RuntimeError("all rows are NaN after numeric conversion")
 
-                for ticker in chunk:
-                    one = work[work["symbol"] == ticker]
-                    if one.empty:
-                        continue
-                    one = one[["date", "open", "close"]].dropna().copy()
-                    if one.empty:
-                        continue
-                    one.columns = ["Date", "Open", "Close"]
-                    one = one.set_index("Date")
-                    frames[ticker] = self._normalize_index(one)
-                return
+                df = df.set_index("datetime")[["open", "close"]].sort_index()
+                df.columns = ["Open", "Close"]
+                return self._normalize_index(df)
             except Exception as exc:
                 is_last = attempt == self.max_retries
                 logging.warning(
-                    "yahooquery retry %d/%d failed for chunk=%s err=%s",
+                    "twelvedata retry %d/%d failed for symbol=%s err=%s",
                     attempt,
                     self.max_retries,
-                    ",".join(chunk),
+                    market_symbol,
                     exc,
                 )
                 if is_last:
-                    logging.error("all providers failed for chunk=%s", ",".join(chunk))
+                    logging.error("twelvedata failed after retries for symbol=%s", market_symbol)
                 else:
                     time.sleep(self.retry_wait_sec * attempt)
+        return pd.DataFrame()
+
+    def fetch_all(self) -> Dict[str, pd.DataFrame]:
+        frames: Dict[str, pd.DataFrame] = {}
+        for market_symbol in self.symbols.values():
+            frames[market_symbol] = self.fetch_symbol(market_symbol)
+        return frames
 
     def _best_signal(self, grouped: pd.DataFrame, label_builder) -> Optional[Signal]:
         if grouped.empty:
@@ -190,8 +157,8 @@ class StatsBot:
             samples=int(chosen["count"]),
         )
 
-    def analyze_symbol(self, symbol: str, ticker: str, frame_map: Dict[str, pd.DataFrame]) -> SymbolSignals:
-        df = frame_map.get(ticker, pd.DataFrame())
+    def analyze_symbol(self, symbol: str, market_symbol: str, frame_map: Dict[str, pd.DataFrame]) -> SymbolSignals:
+        df = frame_map.get(market_symbol, pd.DataFrame())
         if df.empty:
             return SymbolSignals(symbol=symbol, hour=None, weekday=None, hour_weekday=None, note="データ取得不可")
 
@@ -254,7 +221,7 @@ class StatsBot:
     def run(self) -> None:
         logging.info("start analysis symbols=%d lookback_days=%d min_samples=%d", len(self.symbols), self.lookback_days, self.min_samples)
         frame_map = self.fetch_all()
-        results = [self.analyze_symbol(symbol, ticker, frame_map) for symbol, ticker in self.symbols.items()]
+        results = [self.analyze_symbol(symbol, market_symbol, frame_map) for symbol, market_symbol in self.symbols.items()]
         message = self.render_message(results)
 
         dry_run = os.getenv("DRY_RUN", "false").lower() == "true"

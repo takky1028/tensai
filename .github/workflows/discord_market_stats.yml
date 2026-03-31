@@ -26,6 +26,7 @@ jobs:
       - name: Run bot
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           LOOKBACK_DAYS: '180'
           MIN_SAMPLES: '20'
           INCLUDE_RECOMMENDED: 'true'

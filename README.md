@@ -9,7 +9,7 @@
 - H×W: 時間帯×曜日ごとの優勢方向確率・EV
 
 ※ EVは `終値 - 始値` の平均値です。  
-※ データは Yahoo Finance を使用し、`yfinance` 失敗時は `yahooquery` にフォールバックします。
+※ データ取得は Twelve Data API を使用します（Yahoo Financeは使いません）。
 
 ## 対象銘柄
 - ベース: `USDJPY EURUSD GBPUSD AUDUSD GBPAUD GBPNZD XAUUSD US30 WTIUSD`
@@ -27,7 +27,7 @@ DRY_RUN=true python main.py
 
 PowerShell の場合:
 ```powershell
-$env:DRY_RUN=\"true\"; python main.py
+$env:DRY_RUN="true"; python main.py
 ```
 
 ## GitHub Actions運用
@@ -39,14 +39,16 @@ $env:DRY_RUN=\"true\"; python main.py
 ### Secrets
 以下を GitHub Secrets に設定してください。
 - `DISCORD_WEBHOOK_URL`: Discord Incoming Webhook URL
+- `TWELVEDATA_API_KEY`: Twelve Data API Key
 
 ## 環境変数
 - `DISCORD_WEBHOOK_URL` (必須)
+- `TWELVEDATA_API_KEY` (必須)
 - `LOOKBACK_DAYS` (既定: `180`)
 - `MIN_SAMPLES` (既定: `20`)
 - `INCLUDE_RECOMMENDED` (既定: `true`)
 - `DRY_RUN` (既定: `false`)
 - `LOG_LEVEL` (既定: `INFO`)
-- `YF_MAX_RETRIES` (既定: `4`)
-- `YF_RETRY_WAIT_SEC` (既定: `8`)
-- `YF_BATCH_SIZE` (既定: `6`)
+- `API_MAX_RETRIES` (既定: `4`)
+- `API_RETRY_WAIT_SEC` (既定: `8`)
+- `API_TIMEOUT_SEC` (既定: `20`)
