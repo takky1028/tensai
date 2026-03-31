@@ -1,0 +1,33 @@
+name: Discord Market Stats
+
+on:
+  schedule:
+    # 08:00 JST = 23:00 UTC (previous day)
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          LOOKBACK_DAYS: '180'
+          MIN_SAMPLES: '20'
+          INCLUDE_RECOMMENDED: 'true'
+          LOG_LEVEL: 'INFO'
+        run: python main.py
