@@ -61,6 +61,8 @@ class SymbolSignals:
 
 
 class StatsBot:
+    discord_limit = 1900
+
     def __init__(self) -> None:
         self.webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
         self.twelve_data_api_key = os.getenv("TWELVEDATA_API_KEY", "").strip()
@@ -238,23 +240,65 @@ class StatsBot:
             f"/ EV {signal.ev:+.5f} (n={signal.samples})"
         )
 
-    def render_message(self, signals: List[SymbolSignals]) -> str:
+    def _build_direction_sections(self, signals: List[SymbolSignals], direction: str) -> List[str]:
+        if direction == "up":
+            header = "Bullish Market Stats"
+            legend = "Legend: H=Time window / W=Weekday / Up=Bullish probability / EV=Average(Close-Open)"
+            signal_rows = [
+                ("H Up", "hour_up"),
+                ("W Up", "weekday_up"),
+                ("HxW Up", "hour_weekday_up"),
+            ]
+        elif direction == "down":
+            header = "Bearish Market Stats"
+            legend = "Legend: H=Time window / W=Weekday / Down=Bearish probability / EV=Average(Close-Open)"
+            signal_rows = [
+                ("H Down", "hour_down"),
+                ("W Down", "weekday_down"),
+                ("HxW Down", "hour_weekday_down"),
+            ]
+        else:
+            raise ValueError(f"unknown direction: {direction}")
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
-        lines = [f"📊 Market Stats ({now})", "```"]
+        sections: List[str] = []
         for s in signals:
-            lines.append(f"{s.symbol}")
-            lines.append(self._fmt_signal("H↑", s.hour_up))
-            lines.append(self._fmt_signal("H↓", s.hour_down))
-            lines.append(self._fmt_signal("W↑", s.weekday_up))
-            lines.append(self._fmt_signal("W↓", s.weekday_down))
-            lines.append(self._fmt_signal("H×W↑", s.hour_weekday_up))
-            lines.append(self._fmt_signal("H×W↓", s.hour_weekday_down))
+            section = [s.symbol]
+            for title, attr in signal_rows:
+                section.append(self._fmt_signal(title, getattr(s, attr)))
             if s.note:
-                lines.append(f"note: {s.note}")
-            lines.append("")
-        lines.append("```")
-        lines.append("Legend: H=時間帯 / W=曜日 / ↑=陽線率 / ↓=陰線率 / EV=平均(終値-始値)")
-        return "\n".join(lines)
+                section.append(f"note: {s.note}")
+            sections.append("\n".join(section))
+
+        return [f"Market Stats ({header}, {now})", *sections, legend]
+
+    def _chunk_sections(self, title: str, sections: List[str], legend: str) -> List[str]:
+        messages: List[str] = []
+        current_sections: List[str] = []
+
+        def build_message(parts: List[str]) -> str:
+            body = "\n\n".join(parts)
+            return f"{title}\n```\n{body}\n```\n{legend}"
+
+        for section in sections:
+            candidate_parts = [*current_sections, section]
+            if current_sections and len(build_message(candidate_parts)) > self.discord_limit:
+                messages.append(build_message(current_sections))
+                current_sections = [section]
+            else:
+                current_sections = candidate_parts
+
+        if current_sections:
+            messages.append(build_message(current_sections))
+
+        return messages
+
+    def render_messages(self, signals: List[SymbolSignals]) -> List[str]:
+        messages: List[str] = []
+        for direction in ("up", "down"):
+            title, *body_sections, legend = self._build_direction_sections(signals, direction)
+            messages.extend(self._chunk_sections(title, body_sections, legend))
+        return messages
 
     def post_discord(self, content: str) -> None:
         if not self.webhook_url:
@@ -267,16 +311,21 @@ class StatsBot:
         logging.info("start analysis symbols=%d lookback_days=%d min_samples=%d", len(self.symbols), self.lookback_days, self.min_samples)
         frame_map = self.fetch_all()
         results = [self.analyze_symbol(symbol, market_symbol, frame_map) for symbol, market_symbol in self.symbols.items()]
-        message = self.render_message(results)
+        messages = self.render_messages(results)
+        for index, message in enumerate(messages, start=1):
+            logging.info("prepared discord message %d/%d length=%d", index, len(messages), len(message))
 
         dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
         if dry_run:
-            print(message)
+            for index, message in enumerate(messages, start=1):
+                print(f"--- message {index}/{len(messages)} ---")
+                print(message)
             logging.info("dry-run finished")
             return
 
-        self.post_discord(message)
-        logging.info("discord notification sent")
+        for message in messages:
+            self.post_discord(message)
+        logging.info("discord notifications sent count=%d", len(messages))
 
 
 if __name__ == "__main__":
