@@ -31,4 +31,4 @@ jobs:
           MIN_SAMPLES: '20'
           INCLUDE_RECOMMENDED: 'true'
           LOG_LEVEL: 'INFO'
-        run: python main.py
+        run: python main_image.py
