@@ -52,3 +52,18 @@ $env:DRY_RUN="true"; python main.py
 - `API_MAX_RETRIES` (既定: `4`)
 - `API_RETRY_WAIT_SEC` (既定: `8`)
 - `API_TIMEOUT_SEC` (既定: `20`)
+## Image Output Mode
+- The active worker now runs `main_image.py`.
+- The bot generates 6 PNG heatmaps and posts them to Discord as file attachments.
+- Outputs:
+- bullish by symbol x hour
+- bullish by symbol x weekday
+- bullish by symbol x weekday-hour
+- bearish by symbol x hour
+- bearish by symbol x weekday
+- bearish by symbol x weekday-hour
+- Cells show percentages like `62%`.
+- Cells with samples below `MIN_SAMPLES` are rendered as `-`.
+- `DRY_RUN=true` saves the PNG files locally instead of posting to Discord.
+- `DRY_RUN_DIR` sets the local output directory for dry runs. Default is the current directory.
+- `INCLUDE_WEEKENDS=true` includes Saturday and Sunday columns. Default is `false`.
