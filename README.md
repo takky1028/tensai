@@ -21,13 +21,13 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Discord送信せず内容だけ確認
-DRY_RUN=true python main.py
+# Discord送信せず画像だけ確認
+DRY_RUN=true python main_image.py
 ```
 
 PowerShell の場合:
 ```powershell
-$env:DRY_RUN="true"; python main.py
+$env:DRY_RUN="true"; python main_image.py
 ```
 
 ## GitHub Actions運用
