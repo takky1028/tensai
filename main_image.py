@@ -346,10 +346,7 @@ class StatsBot:
             raise RuntimeError("DISCORD_WEBHOOK_URL is not set")
 
         payload = {
-            "content": (
-                f"Market stats heatmaps generated at {datetime.now().strftime('%Y-%m-%d %H:%M JST')} "
-                f"(min samples: {self.min_samples})"
-            )
+            "content": "上がりそうか下がりそうか、しょうがないから教えてあげる。上手に使いなさいよ！"
         }
         files = {f"files[{idx}]": (image.filename, image.content, "image/png") for idx, image in enumerate(images)}
         response = self.session.post(
