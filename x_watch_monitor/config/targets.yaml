@@ -1,0 +1,22 @@
+targets:
+  - target_id: trump-watch
+    display_name: "Example Political Account"
+    x_user: "example_user_1"
+    enabled: true
+    poll_interval_minutes: 120
+    max_posts: 10
+    include_replies: false
+    include_threads: true
+    analysis_profile: "macro_policy"
+    discord_webhook_url: "${DISCORD_WEBHOOK_URL_DEFAULT}"
+
+  - target_id: fed-watch
+    display_name: "Example Policy Account"
+    x_user: "example_user_2"
+    enabled: false
+    poll_interval_minutes: 120
+    max_posts: 5
+    include_replies: false
+    include_threads: false
+    analysis_profile: "rates_focus"
+    discord_webhook_url: "${DISCORD_WEBHOOK_URL_DEFAULT}"
