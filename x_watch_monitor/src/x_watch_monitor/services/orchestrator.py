@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from x_watch_monitor.models import TargetConfig, utc_now
+from x_watch_monitor.models import TopicConfig, utc_now
 from x_watch_monitor.repositories import (
     AnalysisRepository,
     ErrorRepository,
@@ -43,14 +43,14 @@ class MonitorOrchestrator:
         self.analysis_service = analysis_service
         self.notification_service = notification_service
 
-    def run(self, targets: list[TargetConfig]) -> None:
+    def run(self, targets: list[TopicConfig]) -> None:
         for target in targets:
             if not target.enabled:
                 logger.info("skip disabled target target_id=%s", target.target_id)
                 continue
             self._run_target(target)
 
-    def _run_target(self, target: TargetConfig) -> None:
+    def _run_target(self, target: TopicConfig) -> None:
         state = self.state_repository.get(target.target_id)
         now = utc_now()
         if state.last_polled_at and now - state.last_polled_at < timedelta(minutes=target.poll_interval_minutes):
@@ -61,11 +61,11 @@ class MonitorOrchestrator:
             )
             return
 
-        logger.info("start target target_id=%s x_user=%s", target.target_id, target.x_user)
+        logger.info("start target target_id=%s keywords=%s", target.target_id, ",".join(target.keywords))
         try:
-            posts = self.collection_service.collect(target, since_id=state.last_processed_post_id)
+            posts = self.collection_service.collect(target, since_time=state.last_processed_post_at)
             self.post_repository.save_many(posts)
-            new_posts = self.diff_service.select_unprocessed(posts, target.target_id, state.last_processed_post_id)
+            new_posts = self.diff_service.select_unprocessed(posts, target.target_id, state.last_processed_post_at)
             if not new_posts:
                 logger.info("no new posts target_id=%s", target.target_id)
                 self.state_repository.upsert(
@@ -91,7 +91,7 @@ class MonitorOrchestrator:
                 )
                 raise
 
-            max_post = max(new_posts, key=lambda item: int(item.post_id))
+            max_post = max(new_posts, key=lambda item: (item.created_at, item.post_id))
             self.notification_repository.mark_sent(
                 target.target_id,
                 [post.post_id for post in new_posts],

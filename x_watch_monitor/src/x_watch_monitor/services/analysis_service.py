@@ -5,12 +5,12 @@ from datetime import timezone
 from typing import Any
 
 from x_watch_monitor.clients.grok_client import GrokClient
-from x_watch_monitor.models import AnalysisResult, TargetConfig, XPost, utc_now
+from x_watch_monitor.models import AnalysisResult, ContentItem, TopicConfig, utc_now
 
 PROFILE_HINTS = {
-    "default": "Focus on market-moving macro implications, avoid overclaiming, and keep uncertainty explicit.",
-    "macro_policy": "Emphasize FX, equities, rates, inflation, trade policy, and macro spillover effects.",
-    "rates_focus": "Weight rate-path implications and inflation-growth tradeoffs more heavily than equity narratives.",
+    "default": "日本語で簡潔かつ実務的に要約し、不確実性は明示してください。",
+    "macro_policy": "為替、株式、金利、インフレ、関税、地政学への波及を優先して整理してください。",
+    "rates_focus": "金利見通し、景気減速、インフレ圧力のバランスを重視してください。",
 }
 
 
@@ -18,7 +18,7 @@ class AnalysisService:
     def __init__(self, grok_client: GrokClient) -> None:
         self.grok_client = grok_client
 
-    def analyze(self, target: TargetConfig, posts: list[XPost]) -> AnalysisResult:
+    def analyze(self, target: TopicConfig, posts: list[ContentItem]) -> AnalysisResult:
         analyzed_at = utc_now()
         system_prompt = self._build_system_prompt(target.analysis_profile)
         user_prompt = self._build_user_prompt(target, posts, analyzed_at.isoformat())
@@ -28,33 +28,36 @@ class AnalysisService:
     def _build_system_prompt(self, analysis_profile: str) -> str:
         hint = PROFILE_HINTS.get(analysis_profile, PROFILE_HINTS["default"])
         schema = {
-            "summary": "short summary",
-            "usd_bias": "usd_bullish|usd_bearish|neutral",
-            "equity_bias": "equity_bullish|equity_bearish|neutral",
-            "risk_regime": "risk_on|risk_off|neutral",
-            "rate_bias": "upward_pressure|downward_pressure|neutral",
-            "inflation_bias": "inflation_concern|growth_slowdown_concern|neutral",
-            "trade_policy_bias": "trade_friction_risk_high|trade_friction_risk_low|neutral",
-            "geopolitical_risk": "high|medium|low",
-            "confidence": "0-100 integer",
-            "key_drivers": ["string"],
-            "notable_quotes": ["string"],
+            "summary": "日本語の要約",
+            "usd_bias": "ドル高|ドル安|中立",
+            "equity_bias": "株高|株安|中立",
+            "risk_regime": "リスクオン|リスクオフ|中立",
+            "rate_bias": "金利上昇圧力|金利低下圧力|中立",
+            "inflation_bias": "インフレ懸念|景気減速懸念|中立",
+            "trade_policy_bias": "関税・貿易摩擦リスク高|関税・貿易摩擦リスク低|中立",
+            "geopolitical_risk": "高い|中程度|低い",
+            "confidence": "0-100 の整数",
+            "key_drivers": ["日本語の箇条書き"],
+            "notable_quotes": ["日本語の引用または見出し"],
         }
         return (
-            "You are a market surveillance analyst. "
-            "Read the provided X posts and return JSON only. "
-            "Do not wrap the response in markdown. "
-            "Base the analysis only on the provided posts. "
-            "If signal is mixed or unclear, use neutral/medium and lower confidence. "
-            f"{hint} "
-            f"Required JSON shape: {json.dumps(schema, ensure_ascii=False)}"
+            "あなたは金融市場向けのニュース監視アナリストです。"
+            "与えられたX検索結果とニュース見出しだけを根拠に分析してください。"
+            "出力はMarkdownではなくJSONのみで返してください。"
+            "要約、キードライバー、引用を含め、必ず日本語で記述してください。"
+            "判断が割れる場合は中立を選び、confidenceを下げてください。"
+            f"{hint}"
+            f"必須JSON形式: {json.dumps(schema, ensure_ascii=False)}"
         )
 
-    def _build_user_prompt(self, target: TargetConfig, posts: list[XPost], analyzed_at: str) -> str:
+    def _build_user_prompt(self, target: TopicConfig, posts: list[ContentItem], analyzed_at: str) -> str:
         post_lines = [
             json.dumps(
                 {
                     "post_id": post.post_id,
+                    "source_type": post.source_type,
+                    "source_author": post.source_author,
+                    "title": post.title,
                     "created_at": post.created_at.astimezone(timezone.utc).isoformat(),
                     "text": post.text,
                     "url": post.url,
@@ -66,16 +69,17 @@ class AnalysisService:
         return (
             f"target_id={target.target_id}\n"
             f"target_name={target.display_name}\n"
+            f"keywords={json.dumps(target.keywords, ensure_ascii=False)}\n"
             f"analysis_profile={target.analysis_profile}\n"
             f"analyzed_at={analyzed_at}\n"
-            "posts=\n"
+            "source_items=\n"
             + "\n".join(post_lines)
         )
 
     def _normalize_result(
         self,
-        target: TargetConfig,
-        posts: list[XPost],
+        target: TopicConfig,
+        posts: list[ContentItem],
         analyzed_at,
         parsed: dict[str, Any],
         raw_response: dict[str, Any],
@@ -87,6 +91,9 @@ class AnalysisService:
             source_posts=[
                 {
                     "post_id": post.post_id,
+                    "source_type": post.source_type,
+                    "source_author": post.source_author,
+                    "title": post.title,
                     "created_at": post.created_at.isoformat(),
                     "text": post.text,
                     "url": post.url,
@@ -94,13 +101,13 @@ class AnalysisService:
                 for post in posts
             ],
             summary=str(parsed.get("summary", "")).strip(),
-            usd_bias=self._enum_value(parsed.get("usd_bias"), "neutral"),
-            equity_bias=self._enum_value(parsed.get("equity_bias"), "neutral"),
-            risk_regime=self._enum_value(parsed.get("risk_regime"), "neutral"),
-            rate_bias=self._enum_value(parsed.get("rate_bias"), "neutral"),
-            inflation_bias=self._enum_value(parsed.get("inflation_bias"), "neutral"),
-            trade_policy_bias=self._enum_value(parsed.get("trade_policy_bias"), "neutral"),
-            geopolitical_risk=self._enum_value(parsed.get("geopolitical_risk"), "medium"),
+            usd_bias=self._enum_value(parsed.get("usd_bias"), "中立"),
+            equity_bias=self._enum_value(parsed.get("equity_bias"), "中立"),
+            risk_regime=self._enum_value(parsed.get("risk_regime"), "中立"),
+            rate_bias=self._enum_value(parsed.get("rate_bias"), "中立"),
+            inflation_bias=self._enum_value(parsed.get("inflation_bias"), "中立"),
+            trade_policy_bias=self._enum_value(parsed.get("trade_policy_bias"), "中立"),
+            geopolitical_risk=self._enum_value(parsed.get("geopolitical_risk"), "中程度"),
             confidence=self._confidence_value(parsed.get("confidence")),
             key_drivers=self._string_list(parsed.get("key_drivers")),
             notable_quotes=self._string_list(parsed.get("notable_quotes")),

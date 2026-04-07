@@ -1,10 +1,10 @@
-from .domain import AnalysisResult, AppSettings, TargetConfig, TargetState, XPost, utc_now
+from .domain import AnalysisResult, AppSettings, ContentItem, TargetState, TopicConfig, utc_now
 
 __all__ = [
     "AnalysisResult",
     "AppSettings",
-    "TargetConfig",
+    "ContentItem",
     "TargetState",
-    "XPost",
+    "TopicConfig",
     "utc_now",
 ]

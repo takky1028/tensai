@@ -1,15 +1,16 @@
-# X User Monitor
+# Topic Monitor
 
-X 上の特定ユーザー投稿を定期取得し、Grok で構造化分析し、Discord Webhook に通知する独立ワークフローです。既存の `tensai` 実装とは分離し、将来的に GitHub Actions / cron / Cloud Run Jobs に載せやすい構成にしています。
+トランプ発言や米国政策に関する話題を、X 検索とニュース RSS から定期収集し、Grok で日本語分析して Discord Webhook に通知する独立ワークフローです。既存の `tensai` 実装とは分離し、GitHub Actions / cron / Cloud Run Jobs に載せやすい単発ジョブ構成です。
 
 ## 特徴
 
-- 複数ターゲットを `config/targets.yaml` で管理
-- 2時間おき実行を前提にしたジョブ入口を用意
-- SQLite で対象ごとの処理状態、投稿履歴、分析履歴、通知履歴、エラーログを管理
-- 新規投稿のみ処理し、同一投稿の重複通知を防止
-- API 失敗時も他ターゲットの処理は継続
-- X / Grok / Discord をクライアント層で分離し、差し替えやすい構造
+- 複数トピックを `config/targets.yaml` で管理
+- 4時間おき実行を前提にしたジョブ入口を用意
+- X 検索と Google News RSS の複数ソースを収集
+- SQLite で対象ごとの処理状態、収集履歴、分析履歴、通知履歴、エラーログを管理
+- 新規アイテムのみ処理し、同一ソースの重複通知を防止
+- ソース単位の API 失敗時も、他ソースと他ターゲットの処理は継続
+- Grok の分析結果と Discord 通知は日本語
 
 ## ディレクトリ構成
 
@@ -49,11 +50,14 @@ Copy-Item .env.example .env
 
 ## 環境変数
 
-- `X_BEARER_TOKEN`: X API Bearer Token
+- `X_BEARER_TOKEN`: X 検索 API 用 Bearer Token
 - `X_API_BASE_URL`: 既定値 `https://api.x.com/2`
+- `X_SEARCH_DEFAULT_LANG`: X 検索で使う言語指定。既定値 `ja`
+- `GOOGLE_NEWS_RSS_BASE_URL`: 既定値 `https://news.google.com/rss/search`
+- `GOOGLE_NEWS_GL`: 既定値 `JP`
+- `GOOGLE_NEWS_HL`: 既定値 `ja`
+- `GOOGLE_NEWS_CEID`: 既定値 `JP:ja`
 - `XAI_API_KEY`: Grok 用 xAI API Key
-- `GROK_API_BASE_URL`: 既定値 `https://api.x.ai/v1`
-- `GROK_MODEL`: 既定値 `grok-4.20-beta-latest-non-reasoning`
 - `DISCORD_WEBHOOK_URL_DEFAULT`: ターゲット設定で `${DISCORD_WEBHOOK_URL_DEFAULT}` として参照可能
 - `DATABASE_PATH`: 既定値 `data/monitor.db`
 - `CONFIG_PATH`: 既定値 `config/targets.yaml`
@@ -61,18 +65,24 @@ Copy-Item .env.example .env
 
 ## ターゲット設定
 
-`config/targets.yaml` にターゲットを追加するだけで監視対象を増やせます。
+`config/targets.yaml` にトピックを追加するだけで監視対象を増やせます。
 
 ```yaml
 targets:
-  - target_id: macro-watch
-    display_name: "Macro Account"
-    x_user: "example_user"
+  - target_id: trump-topic-watch
+    display_name: "トランプ・米国政策トピック監視"
+    keywords:
+      - "FRB"
+      - "トランプ"
+      - "アメリカ大統領"
+      - "米大統領"
+      - "関税"
+      - "戦争"
     enabled: true
     poll_interval_minutes: 120
-    max_posts: 10
-    include_replies: false
-    include_threads: true
+    max_items: 20
+    x_search_enabled: true
+    news_enabled: true
     analysis_profile: "macro_policy"
     discord_webhook_url: "${DISCORD_WEBHOOK_URL_DEFAULT}"
 ```
@@ -95,17 +105,16 @@ python -m x_watch_monitor.jobs.poll_targets --config config/targets.yaml --db da
 
 ## 実装の流れ
 
-1. 対象ごとに `poll_interval_minutes` を確認
-2. X から `since_id` ベースで投稿を取得
-3. 返信 / スレッド設定に応じてフィルタ
-4. 未通知の新規投稿のみを Grok に渡して分析
-5. 構造化 JSON を保存
-6. Discord に通知
-7. 成功時のみ最終処理投稿 ID を更新
+1. トピックごとに `poll_interval_minutes` を確認
+2. X 検索と Google News RSS からキーワード一致の新規アイテムを収集
+3. 重複を除去して、新規アイテムだけを Grok に渡す
+4. 日本語の構造化 JSON を保存
+5. Discord に日本語で通知
+6. 成功時のみ最終処理時刻を更新
 
 ## Grok の構造化出力
 
-保存される分析 JSON は以下の形です。
+保存される分析 JSON は以下の形です。値も日本語で返す想定です。
 
 ```json
 {
@@ -140,7 +149,7 @@ cron 例:
 
 ## GitHub Actions
 
-リポジトリ直下の `.github/workflows/x_user_monitor.yml` を追加しています。2時間おき実行と手動実行に対応しています。
+リポジトリ直下の `.github/workflows/x_user_monitor.yml` を追加しています。4時間おき実行と手動実行に対応しています。
 
 設定する Secrets 例:
 
@@ -158,6 +167,7 @@ pytest
 
 ## 補足
 
+- X 検索が 402 や権限不足で失敗しても、ニュース RSS が取れれば処理は継続します。
 - Grok API が不正な JSON を返した場合はそのターゲットのみ失敗として記録し、他ターゲットは継続します。
-- 投稿が 0 件でも安全に終了します。
-- コード内に特定ユーザー名は埋め込んでいません。
+- 収集件数が 0 件でも安全に終了します。
+- キーワードは設定ファイルだけで変更できます。

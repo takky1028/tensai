@@ -1,22 +1,17 @@
 targets:
-  - target_id: trump-watch
-    display_name: "Donald Trump"
-    x_user: "realDonaldTrump"
+  - target_id: trump-topic-watch
+    display_name: "トランプ・米国政策トピック監視"
+    keywords:
+      - "FRB"
+      - "トランプ"
+      - "アメリカ大統領"
+      - "米大統領"
+      - "関税"
+      - "戦争"
     enabled: true
-    poll_interval_minutes: 120
-    max_posts: 10
-    include_replies: false
-    include_threads: true
+    poll_interval_minutes: 240
+    max_items: 20
+    x_search_enabled: true
+    news_enabled: true
     analysis_profile: "macro_policy"
-    discord_webhook_url: "${DISCORD_WEBHOOK_URL_DEFAULT}"
-
-  - target_id: fed-watch
-    display_name: "Example Policy Account"
-    x_user: "example_user_2"
-    enabled: false
-    poll_interval_minutes: 120
-    max_posts: 5
-    include_replies: false
-    include_threads: false
-    analysis_profile: "rates_focus"
     discord_webhook_url: "${DISCORD_WEBHOOK_URL_DEFAULT}"

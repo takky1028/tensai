@@ -4,6 +4,7 @@ import argparse
 
 from x_watch_monitor.clients.discord_client import DiscordWebhookClient
 from x_watch_monitor.clients.grok_client import GrokClient
+from x_watch_monitor.clients.news_client import NewsRssClient
 from x_watch_monitor.clients.x_client import XApiClient
 from x_watch_monitor.config import load_settings, load_targets
 from x_watch_monitor.logging_utils import configure_logging
@@ -25,7 +26,7 @@ from x_watch_monitor.services import (
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Poll configured X targets, analyze with Grok, and notify Discord.")
+    parser = argparse.ArgumentParser(description="Poll configured topics, analyze with Grok, and notify Discord.")
     parser.add_argument("--config", help="Path to targets yaml. Defaults to CONFIG_PATH env or config/targets.yaml.")
     parser.add_argument("--db", help="Path to SQLite database. Defaults to DATABASE_PATH env or data/monitor.db.")
     args = parser.parse_args()
@@ -48,7 +49,7 @@ def main() -> None:
         analysis_repository=AnalysisRepository(db),
         notification_repository=NotificationRepository(db),
         error_repository=ErrorRepository(db),
-        collection_service=CollectionService(XApiClient(settings)),
+        collection_service=CollectionService(XApiClient(settings), NewsRssClient(settings)),
         diff_service=DiffService(NotificationRepository(db)),
         analysis_service=AnalysisService(GrokClient(settings)),
         notification_service=NotificationService(DiscordWebhookClient(settings)),
