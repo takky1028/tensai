@@ -10,15 +10,15 @@ def utc_now() -> datetime:
 
 
 @dataclass(slots=True)
-class TargetConfig:
+class TopicConfig:
     target_id: str
     display_name: str
-    x_user: str
+    keywords: list[str]
     enabled: bool
     poll_interval_minutes: int
-    max_posts: int
-    include_replies: bool
-    include_threads: bool
+    max_items: int
+    x_search_enabled: bool
+    news_enabled: bool
     analysis_profile: str
     discord_webhook_url: str
 
@@ -30,10 +30,14 @@ class AppSettings:
     x_bearer_token: str
     x_api_base_url: str
     x_request_timeout_sec: int
-    x_user_cache_ttl_sec: int
-    x_api_user_fields: str
     x_api_tweet_fields: str
     x_api_max_page_size: int
+    x_search_default_lang: str
+    google_news_rss_base_url: str
+    google_news_gl: str
+    google_news_hl: str
+    google_news_ceid: str
+    news_request_timeout_sec: int
     xai_api_key: str
     grok_api_base_url: str
     grok_model: str
@@ -52,31 +56,16 @@ class TargetState:
 
 
 @dataclass(slots=True)
-class XPost:
+class ContentItem:
     post_id: str
-    author_id: str
-    x_user: str
     target_id: str
+    source_type: str
+    source_author: str
+    title: str
     text: str
     created_at: datetime
-    conversation_id: str | None
-    in_reply_to_user_id: str | None
-    referenced_tweets: list[dict[str, Any]] = field(default_factory=list)
+    url: str
     raw_json: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def is_reply(self) -> bool:
-        if self.in_reply_to_user_id:
-            return True
-        return any(item.get("type") == "replied_to" for item in self.referenced_tweets)
-
-    @property
-    def is_thread_post(self) -> bool:
-        return bool(self.conversation_id and self.conversation_id != self.post_id)
-
-    @property
-    def url(self) -> str:
-        return f"https://x.com/{self.x_user}/status/{self.post_id}"
 
 
 @dataclass(slots=True)

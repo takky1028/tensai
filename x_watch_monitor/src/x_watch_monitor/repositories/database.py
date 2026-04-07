@@ -32,13 +32,12 @@ class Database:
                 CREATE TABLE IF NOT EXISTS posts (
                     post_id TEXT PRIMARY KEY,
                     target_id TEXT NOT NULL,
-                    x_user TEXT NOT NULL,
-                    author_id TEXT,
+                    source_type TEXT NOT NULL,
+                    source_author TEXT,
+                    title TEXT NOT NULL,
                     text TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    conversation_id TEXT,
-                    is_reply INTEGER NOT NULL,
-                    is_thread INTEGER NOT NULL,
+                    url TEXT NOT NULL,
                     raw_json TEXT NOT NULL,
                     inserted_at TEXT NOT NULL
                 );
@@ -75,3 +74,29 @@ class Database:
                 );
                 """
             )
+            self._migrate_posts_table(conn)
+
+    def _migrate_posts_table(self, conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(posts)").fetchall()}
+        required = {"post_id", "target_id", "source_type", "source_author", "title", "text", "created_at", "url", "raw_json", "inserted_at"}
+        if not columns or required.issubset(columns):
+            return
+
+        conn.execute("DROP TABLE IF EXISTS posts_legacy")
+        conn.execute("ALTER TABLE posts RENAME TO posts_legacy")
+        conn.executescript(
+            """
+            CREATE TABLE posts (
+                post_id TEXT PRIMARY KEY,
+                target_id TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_author TEXT,
+                title TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                url TEXT NOT NULL,
+                raw_json TEXT NOT NULL,
+                inserted_at TEXT NOT NULL
+            );
+            """
+        )

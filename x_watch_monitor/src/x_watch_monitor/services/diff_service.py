@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from x_watch_monitor.models import XPost
+from datetime import datetime
+
+from x_watch_monitor.models import ContentItem
 from x_watch_monitor.repositories.notification_repository import NotificationRepository
 
 
@@ -8,11 +10,15 @@ class DiffService:
     def __init__(self, notification_repository: NotificationRepository) -> None:
         self.notification_repository = notification_repository
 
-    def select_unprocessed(self, posts: list[XPost], target_id: str, last_processed_post_id: str | None) -> list[XPost]:
-        results: list[XPost] = []
-        last_processed_num = int(last_processed_post_id) if last_processed_post_id else None
+    def select_unprocessed(
+        self,
+        posts: list[ContentItem],
+        target_id: str,
+        last_processed_post_at: datetime | None,
+    ) -> list[ContentItem]:
+        results: list[ContentItem] = []
         for post in posts:
-            if last_processed_num is not None and int(post.post_id) <= last_processed_num:
+            if last_processed_post_at and post.created_at <= last_processed_post_at:
                 continue
             if self.notification_repository.was_sent(target_id, post.post_id):
                 continue
