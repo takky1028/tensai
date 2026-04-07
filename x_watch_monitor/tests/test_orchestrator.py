@@ -49,6 +49,7 @@ class FakeAnalysisService(AnalysisService):
             inflation_bias="中立",
             trade_policy_bias="中立",
             geopolitical_risk="中程度",
+            overall_tone="中立",
             confidence=50,
             key_drivers=["材料1"],
             notable_quotes=[],

@@ -28,23 +28,26 @@ class AnalysisService:
     def _build_system_prompt(self, analysis_profile: str) -> str:
         hint = PROFILE_HINTS.get(analysis_profile, PROFILE_HINTS["default"])
         schema = {
-            "summary": "日本語の要約",
+            "summary": "日本語の短い要約",
             "usd_bias": "ドル高|ドル安|中立",
             "equity_bias": "株高|株安|中立",
             "risk_regime": "リスクオン|リスクオフ|中立",
             "rate_bias": "金利上昇圧力|金利低下圧力|中立",
             "inflation_bias": "インフレ懸念|景気減速懸念|中立",
-            "trade_policy_bias": "関税・貿易摩擦リスク高|関税・貿易摩擦リスク低|中立",
+            "trade_policy_bias": "関税・貿易摩擦リスク|中立",
             "geopolitical_risk": "高い|中程度|低い",
+            "overall_tone": "強気|弱気|警戒|中立",
             "confidence": "0-100 の整数",
-            "key_drivers": ["日本語の箇条書き"],
+            "key_drivers": ["50文字以内の日本語箇条書き", "50文字以内の日本語箇条書き", "50文字以内の日本語箇条書き"],
             "notable_quotes": ["日本語の引用または見出し"],
         }
         return (
             "あなたは金融市場向けのニュース監視アナリストです。"
             "与えられたX検索結果とニュース見出しだけを根拠に分析してください。"
             "出力はMarkdownではなくJSONのみで返してください。"
-            "要約、キードライバー、引用を含め、必ず日本語で記述してください。"
+            "必ず日本語で記述してください。"
+            "key_drivers は必ず3件に固定し、各項目は50文字以内にしてください。"
+            "通知では key_drivers と各バイアスだけを使うため、簡潔で断定的な表現を優先してください。"
             "判断が割れる場合は中立を選び、confidenceを下げてください。"
             f"{hint}"
             f"必須JSON形式: {json.dumps(schema, ensure_ascii=False)}"
@@ -108,8 +111,9 @@ class AnalysisService:
             inflation_bias=self._enum_value(parsed.get("inflation_bias"), "中立"),
             trade_policy_bias=self._enum_value(parsed.get("trade_policy_bias"), "中立"),
             geopolitical_risk=self._enum_value(parsed.get("geopolitical_risk"), "中程度"),
+            overall_tone=self._enum_value(parsed.get("overall_tone"), "中立"),
             confidence=self._confidence_value(parsed.get("confidence")),
-            key_drivers=self._string_list(parsed.get("key_drivers")),
+            key_drivers=self._key_drivers(parsed.get("key_drivers")),
             notable_quotes=self._string_list(parsed.get("notable_quotes")),
             raw_model_output={"parsed_json": parsed, "api_response": raw_response},
         )
@@ -133,3 +137,11 @@ class AnalysisService:
         if not isinstance(value, list):
             return []
         return [str(item).strip() for item in value if str(item).strip()]
+
+    @staticmethod
+    def _key_drivers(value: Any) -> list[str]:
+        items = AnalysisService._string_list(value)[:3]
+        trimmed = [item[:50] for item in items]
+        while len(trimmed) < 3:
+            trimmed.append("情報整理中")
+        return trimmed
