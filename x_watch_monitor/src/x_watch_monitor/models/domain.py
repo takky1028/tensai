@@ -82,6 +82,7 @@ class AnalysisResult:
     inflation_bias: str
     trade_policy_bias: str
     geopolitical_risk: str
+    overall_tone: str
     confidence: int
     key_drivers: list[str]
     notable_quotes: list[str]
@@ -101,6 +102,7 @@ class AnalysisResult:
             "inflation_bias": self.inflation_bias,
             "trade_policy_bias": self.trade_policy_bias,
             "geopolitical_risk": self.geopolitical_risk,
+            "overall_tone": self.overall_tone,
             "confidence": self.confidence,
             "key_drivers": self.key_drivers,
             "notable_quotes": self.notable_quotes,
