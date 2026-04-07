@@ -1,7 +1,7 @@
 targets:
   - target_id: trump-watch
-    display_name: "Example Political Account"
-    x_user: "example_user_1"
+    display_name: "Donald Trump"
+    x_user: "realDonaldTrump"
     enabled: true
     poll_interval_minutes: 120
     max_posts: 10
