@@ -10,6 +10,22 @@ class AnalysisRepository:
     def __init__(self, db: Database) -> None:
         self.db = db
 
+    def get_latest_payload(self, target_id: str) -> dict | None:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT payload_json
+                FROM analyses
+                WHERE target_id = ?
+                ORDER BY analysis_id DESC
+                LIMIT 1
+                """,
+                (target_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return json.loads(row["payload_json"])
+
     def save(self, analysis: AnalysisResult) -> int:
         with self.db.connect() as conn:
             cursor = conn.execute(
