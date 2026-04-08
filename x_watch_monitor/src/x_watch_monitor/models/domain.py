@@ -75,6 +75,10 @@ class AnalysisResult:
     analyzed_at: datetime
     source_posts: list[dict[str, Any]]
     summary: str
+    why_now: str
+    change_summary: str
+    market_triggers: list[str]
+    next_watch_events: list[str]
     usd_bias: str
     equity_bias: str
     risk_regime: str
@@ -86,6 +90,7 @@ class AnalysisResult:
     confidence: int
     key_drivers: list[str]
     notable_quotes: list[str]
+    signal_assessment: dict[str, dict[str, str]]
     raw_model_output: dict[str, Any]
 
     def to_payload(self) -> dict[str, Any]:
@@ -95,6 +100,10 @@ class AnalysisResult:
             "analyzed_at": self.analyzed_at.isoformat(),
             "source_posts": self.source_posts,
             "summary": self.summary,
+            "why_now": self.why_now,
+            "change_summary": self.change_summary,
+            "market_triggers": self.market_triggers,
+            "next_watch_events": self.next_watch_events,
             "usd_bias": self.usd_bias,
             "equity_bias": self.equity_bias,
             "risk_regime": self.risk_regime,
@@ -106,5 +115,6 @@ class AnalysisResult:
             "confidence": self.confidence,
             "key_drivers": self.key_drivers,
             "notable_quotes": self.notable_quotes,
+            "signal_assessment": self.signal_assessment,
             "raw_model_output": self.raw_model_output,
         }

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 
 from x_watch_monitor.models import AnalysisResult, ContentItem, TopicConfig
 from x_watch_monitor.repositories import (
@@ -32,27 +32,37 @@ class FakeAnalysisService(AnalysisService):
     def __init__(self) -> None:
         pass
 
-    def analyze(self, target: TopicConfig, posts: list[ContentItem]) -> AnalysisResult:
+    def analyze(self, target: TopicConfig, posts: list[ContentItem], previous_analysis=None) -> AnalysisResult:
         return AnalysisResult(
             target_id=target.target_id,
             target_name=target.display_name,
             analyzed_at=datetime.now(timezone.utc),
             source_posts=[
-                {"post_id": post.post_id, "created_at": post.created_at.isoformat(), "text": post.text, "url": post.url}
+                {
+                    "post_id": post.post_id,
+                    "created_at": post.created_at.isoformat(),
+                    "text": post.text,
+                    "url": post.url,
+                }
                 for post in posts
             ],
-            summary="日本語要約",
-            usd_bias="中立",
-            equity_bias="中立",
-            risk_regime="中立",
-            rate_bias="中立",
-            inflation_bias="中立",
-            trade_policy_bias="中立",
-            geopolitical_risk="中程度",
-            overall_tone="中立",
+            summary="summary",
+            why_now="why now",
+            change_summary="initial snapshot",
+            market_triggers=["trigger"],
+            next_watch_events=["event"],
+            usd_bias="neutral",
+            equity_bias="neutral",
+            risk_regime="neutral",
+            rate_bias="neutral",
+            inflation_bias="neutral",
+            trade_policy_bias="neutral",
+            geopolitical_risk="medium",
+            overall_tone="neutral",
             confidence=50,
-            key_drivers=["材料1"],
+            key_drivers=["driver"],
             notable_quotes=[],
+            signal_assessment={"usd": {"strength": "medium", "horizon": "short_term", "rationale": "test"}},
             raw_model_output={"ok": True},
         )
 
@@ -91,7 +101,7 @@ def test_orchestrator_updates_state_and_avoids_duplicate_notification(tmp_path) 
     target = TopicConfig(
         target_id="macro-watch",
         display_name="Macro Watch",
-        keywords=["FRB", "トランプ"],
+        keywords=["FRB", "Trump"],
         enabled=True,
         poll_interval_minutes=0,
         max_items=10,
