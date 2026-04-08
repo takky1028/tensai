@@ -26,3 +26,9 @@ class DiscordWebhookClient:
             return response.json()
         except ValueError:
             return {"status_code": response.status_code, "body": response.text}
+
+    def send_messages(self, webhook_url: str, contents: list[str]) -> dict:
+        responses = []
+        for content in contents:
+            responses.append(self.send_message(webhook_url, content))
+        return {"messages_sent": len(responses), "responses": responses}
