@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 from datetime import timedelta
@@ -77,7 +77,8 @@ class MonitorOrchestrator:
                 )
                 return
 
-            analysis = self.analysis_service.analyze(target, new_posts)
+            previous_analysis = self.analysis_repository.get_latest_payload(target.target_id)
+            analysis = self.analysis_service.analyze(target, new_posts, previous_analysis=previous_analysis)
             analysis_id = self.analysis_repository.save(analysis)
             try:
                 response_body = self.notification_service.notify(target, analysis)
